@@ -1,46 +1,31 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-import requests
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.job import Job, JobCreate, JobApplication, JobApplicationCreate, JobApplicationUpdate
 from app.api.dependencies import get_current_active_user
-from app.services import job_service
+from app.services import job_service, verified_job_service
 
 router = APIRouter()
 
 @router.get("/market")
 def get_real_market_jobs(
     role: Optional[str] = Query("Data Analyst", description="Role to search for"),
+    location: Optional[str] = Query("Bangalore", description="Preferred city or region"),
+    work_mode: str = Query("remote_hybrid", description="remote_hybrid, india_remote, or bangalore"),
     limit: int = Query(15, le=50)
 ):
-    """Fetch real jobs from the public Remotive API without an API key."""
+    """Fetch verified, deduplicated Data Analyst jobs from trusted sources."""
     try:
-        url = f"https://remotive.com/api/remote-jobs?search={role}&limit={limit}"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        
-        data = response.json()
-        jobs_data = data.get("jobs", [])
-        
-        formatted_jobs = []
-        for index, j in enumerate(jobs_data):
-            formatted_jobs.append({
-                "id": f"remotive_{j.get('id', index)}",
-                "title": j.get("title", ""),
-                "company": j.get("company_name", ""),
-                "location": j.get("candidate_required_location", "Remote"),
-                "salary": j.get("salary") or "Competitive",
-                "match_score": max(50, 95 - (index * 2)), # Mock score
-                "url": j.get("url", ""),
-                "source": "Remotive API",
-                "category": j.get("category", "")
-            })
-            
-        return formatted_jobs
+        return verified_job_service.fetch_verified_data_analyst_jobs(
+            role=role or "Data Analyst",
+            limit=limit,
+            location_focus=location or "Bangalore",
+            work_mode=work_mode,
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch market jobs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch verified market jobs: {str(e)}")
 
 @router.get("/", response_model=List[Job])
 def read_jobs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):

@@ -1,9 +1,44 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
 from app.services.resume_service import resume_service
 from app.api.dependencies import get_current_active_user
 from app.models.user import User
 
 router = APIRouter()
+
+
+@router.post("/tailor-preview")
+async def tailor_resume_preview(
+    file: UploadFile = File(...),
+    job_description: str = Form(...),
+):
+    """Parse a resume PDF and return editable tailored resume content."""
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+
+    content = await file.read()
+    try:
+        return resume_service.build_tailored_resume_preview(content, job_description)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/download-pdf")
+async def download_tailored_pdf(
+    tailored_summary: str = Form(...),
+    skills: str = Form(...),
+    bullet_points: str = Form(...),
+    job_description: str = Form(...),
+):
+    """Generate a downloadable PDF from edited tailored resume content."""
+    try:
+        pdf = resume_service.generate_tailored_pdf(tailored_summary, skills, bullet_points, job_description)
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="tailored-resume.pdf"'},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/parse")
 async def parse_resume(
